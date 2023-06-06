@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# Step 1: Determine the key ID from the input signature file
+# keyin="/path/to/signature/file.sig"
+
+read -p "Enter the path to the input signature file: " keyin
+
+keyid=$(gpg --verify "$keyin" 2>&1  #this part removed| grep -oP '(?<=key ID )[A-F0-9]+')
+
+# Step 2: Define the key servers in an array
+
+keyservers=(
+  "hkp://keyserver.ubuntu.com"
+  "hkp://pgp.mit.edu"
+  "hkp://keys.openpgp.org"
+  # Add more key servers here if desired
+)
+
+# Step 3: Query each key server to download the public key
+
+kps=()
+
+for server in "${keyservers[@]}"
+do
+    key=$(gpg --keyserver "$server" --recv-keys "$keyin" 2>&1)
+    kps+=("$server: $key")
+done
+
+# Step 4: Verify the key against the input signature
+declare -A verification_results  # Array to store verification results
+for server in "${!kps[@]}"; do
+  key_output="${kps[$server]}"
+  verify_output=$(gpg --verify "$keyin" 2>&1 <<< "$key_output")
+  verification_results["$server"]=$verify_output
+done
+
+# Step 5: Save verification results to a text file and display them in a table
+output_file="verification_results.txt"
+log_file="scriptlog.txt"
+{
+  echo "Verification Results:"
+  echo
+  for server in "${!verification_results[@]}"; do
+    echo "Server: $server"
+    echo "${verification_results[$server]}"
+    echo "----------------------------------------"
+  done
+} | tee "$output_file"
+
+# Display any errors at the end
+if [[ -s "$log_file" ]]; then
+  echo "Script encountered errors. Please check the log file: $log_file"
+  cat "$log_file"
+fi
